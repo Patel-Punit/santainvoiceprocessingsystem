@@ -9,7 +9,7 @@ import io  # Import io module
 
 def file_to_response_json(file):
     # API Configuration
-    api_url = "https://sfrpl.in/invoice/extract_file"
+    api_url = "https://sfrpl.in/invoice/docs"
     
     try:
         # Open the PDF file in binary mode
