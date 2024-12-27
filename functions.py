@@ -1,4 +1,4 @@
-import streamlit as st #type:ignore
+import streamlit as st #type: ignore
 import requests
 import pandas as pd
 import numpy as np
@@ -8,34 +8,26 @@ from io import BytesIO
 import io  # Import io module
 
 def file_to_response_json(file):
-    # API Configuration
-    api_url = "https://sfrpl.in/invoice/docs"
-    
-    try:
-        # Open the PDF file in binary mode
-        files = {'invoice_file': file}
-        
-        # Send the POST request
-        print("Sending request to:", api_url)
-        response = requests.post(api_url, files=files, timeout=3000)
 
-        # Log the response details
-        print("Status Code:", response.status_code)
-        print("Response Headers:", response.headers)
+    # API Configuration
+    api_url = "https://pluto.origamis.ai:9001/zolvit/docagent_zolvit"
+    payload = {
+        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InYtYXZpbmFzaC5rQG9yaWdhbWlzLmFpIiwicm9sZSI6IkFkbWluIiw",
+        "email": "user@zolvit.com",
+    }
+
+    try:
+        files = {"file": ("invoice.pdf", file)}
+        response = requests.post(api_url, data=payload, files=files)
 
         if response.status_code == 200:
             response_json = response.json()
-            print("Response:", response_json)
+
             return response_json
+            
         else:
-            print(f"Error: Received status code {response.status_code}")
-            print("Response Text:", response.text)
             return None
-    except requests.exceptions.RequestException as e:
-        print(f"Request failed: {str(e)}")
-        return None
     except Exception as e:
-        print(f"An error occurred: {str(e)}")
         return None
     
 
@@ -43,13 +35,13 @@ def response_json_to_dataframes(response_json):
 
     try:
         # Extracting DataFrames
-        invoice_details = response_json.get("Invoice_Details", {})
+        invoice_details = response_json.get("Invoice Details", {})
         invoice_df = pd.DataFrame([invoice_details])
 
-        line_items = response_json.get("Line_Items", [])
+        line_items = response_json.get("Line Items", [])
         line_items_df = pd.DataFrame(line_items)
 
-        total_summary = response_json.get("Total_Summary", {})
+        total_summary = response_json.get("Total Summary", {})
         total_summary_df = pd.DataFrame([total_summary])
 
         return invoice_df, line_items_df, total_summary_df
@@ -115,7 +107,7 @@ def missing_value_check(invoice_df, line_items_df, total_summary_df):
     tax_condition6 = (pd.isna(line_items_df['final_amount']) | (pd.isna(line_items_df['rate_per_item_after_discount']) & pd.isna(line_items_df['quantity']))).any()
 
     if (tax_condition1 and tax_condition2 and tax_condition3 and tax_condition4 and tax_condition5 and tax_condition6):
-        return False, 'Missing Values', 'Not Enough fields in line items. Second'
+        return False, 'Need to be checked by agent.', 'Not Enough fields in line items. Second'
 
     
     final_condition1 = (pd.isna(line_items_df['taxable_value']) | pd.isna(line_items_df['tax_rate'])).any()
@@ -132,12 +124,12 @@ def missing_value_check(invoice_df, line_items_df, total_summary_df):
         return False, 'Missing Values', 'Not Enough fields in line items. Third'
 
 
-    invoice_condition1 = (pd.isna(invoice_df['taxable_value']) | pd.isna(invoice_df['invoice_value'])).any()
-    invoice_condition2 = (pd.isna(invoice_df['tax_amount']) | pd.isna(invoice_df['invoice_value'])).any()
-    invoice_condition3 = (pd.isna(invoice_df['tax_amount']) | pd.isna(invoice_df['taxable_value'])).any()
+    # invoice_condition1 = (pd.isna(invoice_df['taxable_value']) | pd.isna(invoice_df['invoice_value'])).any()
+    # invoice_condition2 = (pd.isna(invoice_df['tax_amount']) | pd.isna(invoice_df['invoice_value'])).any()
+    # invoice_condition3 = (pd.isna(invoice_df['tax_amount']) | pd.isna(invoice_df['taxable_value'])).any()
 
-    if (invoice_condition1 or invoice_condition2 or invoice_condition3):
-        return False, 'Missing Values', 'Not Enough fields in invoice details.'
+    # if (invoice_condition1 or invoice_condition2 or invoice_condition3):
+    #     return False, 'Missing Values', 'Not Enough fields in invoice details.'
     
 
     total_condition1 = (pd.isna(total_summary_df['total_taxable_value']) | pd.isna(total_summary_df['total_invoice_value'])).any()
@@ -256,6 +248,11 @@ def relation_check(invoice_df, line_items_df, total_summary_df):
             if not np.isclose(row['total_invoice_value'], row['total_taxable_value'] + (row['total_sgst_amount']+row['total_cgst_amount']), atol=1, rtol=0):
                 return False, "Relation check", "Failed relation check in Summary. Third"
             
+    if not total_summary_df[['total_taxable_value', 'total_invoice_value']].isnull().any().any() and total_summary_df[['total_sgst_amount', 'total_cgst_amount', 'total_igst_amount', 'total_tax_amount']].isnull().any().any():
+        for id, row in total_summary_df.iterrows():
+            if not np.isclose(row['total_invoice_value'], row['total_taxable_value'], atol=1, rtol=0):
+                return False, "Relation check", "Failed relation check in Summary. Third"
+            
 
     # Rate
     if not line_items_df[['rate_per_item_after_discount', 'quantity', 'taxable_value']].isnull().any().any():
@@ -282,7 +279,6 @@ def relation_check(invoice_df, line_items_df, total_summary_df):
         for id, row in line_items_df.iterrows():
             if not np.isclose(row['taxable_value'], row['quantity'] * row['rate_per_item_after_discount'], atol=1, rtol=0):
                 return False, 'Relation check', 'Taxable Value - from rate & quantity.'
-            
 
     # Taxable Value - from final amount & tax amount
     if not line_items_df[['final_amount', 'tax_amount', 'taxable_value']].isnull().any().any():
