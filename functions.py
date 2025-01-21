@@ -1,60 +1,314 @@
 import streamlit as st #type:ignore
-import requests
+import requests #type: ignore
 import pandas as pd
 import numpy as np
 from datetime import datetime
 import zipfile
 from io import BytesIO 
 import io  # Import io module
+import random
+import string
+from datetime import datetime, timedelta
+import json
+from elasticsearch import Elasticsearch  # type: ignore
 
-def file_to_response_json(file):
+
+# def file_to_response_json_santa_fe(file):
+#     # API Configuration
+#     api_url = "https://sfrpl.in/invoice/extract_file"
+    
+#     try:
+#         # Open the PDF file in binary mode
+#         files = {'invoice_file': file}
+        
+#         # Send the POST request
+#         print("Sending request to:", api_url)
+#         response = requests.post(api_url, files=files, timeout=3000)
+#         # Log the response details
+#         print("Status Code:", response.status_code)
+#         print("Response Headers:", response.headers)
+#         if response.status_code == 200:
+#             response_json = response.json()
+#             print("Response:", response_json)
+#             return response_json
+#         else:
+#             print(f"Error: Received status code {response.status_code}")
+#             print("Response Text:", response.text)
+#             return None
+#     except requests.exceptions.RequestException as e:
+#         print(f"Request failed: {str(e)}")
+#         return None
+#     except Exception as e:
+#         print(f"An error occurred: {str(e)}")
+#         return None
+
+def file_to_response_json_santa_fe(file):
     # API Configuration
-    api_url = "https://sfrpl.in/invoice/docs"
+    api_url = "https://sfrpl.in/invoice/extract_file"
+    bearer_token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxNjc3NmY3MjJmMDcwNzI4NzMwODA1ZThlMTUzNjE4NjU1OTdmZTNkOWUxMTAxZDU5NjA4MmEyNDE0ZjU0YWNiIn0.vRKYhZ6SIJ0ajUkiqVaaPdMXClvGkUMhRY6krRA2Qzg"
     
     try:
         # Open the PDF file in binary mode
         files = {'invoice_file': file}
+
+        # Add the Authorization header
+        headers = {
+            "Authorization": f"Bearer {bearer_token}"
+        }
         
         # Send the POST request
         print("Sending request to:", api_url)
-        response = requests.post(api_url, files=files, timeout=3000)
-
+        response = requests.post(api_url, files=files, headers=headers, timeout=3000)
+        
         # Log the response details
         print("Status Code:", response.status_code)
         print("Response Headers:", response.headers)
-
-        if response.status_code == 200:
-            response_json = response.json()
-            print("Response:", response_json)
-            return response_json
+        if str(response.status_code) in ('200','435','436'):
+            # response_json = response.json()
+            print("Response:", response.json())
+            return response.json(), response.status_code
         else:
             print(f"Error: Received status code {response.status_code}")
             print("Response Text:", response.text)
-            return None
+            return None, None
     except requests.exceptions.RequestException as e:
         print(f"Request failed: {str(e)}")
-        return None
+        return None, None
     except Exception as e:
         print(f"An error occurred: {str(e)}")
-        return None
-    
+        return None, None
 
-def response_json_to_dataframes(response_json):
+
+def file_to_response_json_affine(file):
+    # Define the API endpoint and credentials
+    endpoint = "https://neptune.origamis.ai:9001/zolvit/processInvoice"
+    access_token = "gAAAAABnhSlPQIiqO3d5qFFLF0qTVl1YujXLFeusqI_GSJhHBzPmuLpcUcpB1Z0056TUt-w5jyZsRwBE9NyfL7xLK0AITMJDUsK19RpcRAKi8obPXbLovDGP1DxeAE_4Js8QxFIX0iP8WdaQO66IG8hpEdZp0hl5Gg=="
+    email = "Zolvit@origamis.ai"
 
     try:
+        # Prepare the multipart form data
+        files = {
+            "file": (file.name, file, "application/pdf")
+        }
+
+        # Prepare the form data
+        data = {
+            "access_token": access_token,
+            "email": email
+        }
+
+        # Make the POST request with a timeout of 60 seconds
+        try:
+            response = requests.post(endpoint, data=data, files=files, timeout=60)
+        except requests.exceptions.Timeout:
+            # Custom code and message for timeout
+            return 408, [], "Request timed out after 60 seconds."
+
+        # Initialize variables to return
+        status_code = response.status_code
+        invoice_data = []
+        status = ""
+
+        # Check for HTTP request success
+        if status_code == 200:
+            # Parse the response JSON
+            response_json = response.json()
+
+            # Extract specific details
+            invoice_list = response_json.get("invoice_list", [])
+            if invoice_list:
+                # Extract the first invoice's details
+                first_invoice = invoice_list[0]
+                status = first_invoice.get("status", "Unknown")
+                invoice_data = first_invoice.get("invoice_data", [])
+        else:
+            # In case of failure, add an error status
+            status = f"API call failed with status code {status_code}: {response.text}"
+
+        return status_code, invoice_data, status
+
+    except FileNotFoundError:
+        return None, None, "Error: The file was not found."
+    except Exception as e:
+        return None, None, f"An error occurred: {str(e)}"
+
+
+
+# def file_to_response_json_affine(file):
+#     # Define the API endpoint and credentials
+#     endpoint = "https://neptune.origamis.ai:9001/zolvit/processInvoice"
+#     access_token = "gAAAAABnhSlPQIiqO3d5qFFLF0qTVl1YujXLFeusqI_GSJhHBzPmuLpcUcpB1Z0056TUt-w5jyZsRwBE9NyfL7xLK0AITMJDUsK19RpcRAKi8obPXbLovDGP1DxeAE_4Js8QxFIX0iP8WdaQO66IG8hpEdZp0hl5Gg=="
+#     email = "Zolvit@origamis.ai"
+
+#     try:
+#         # Prepare the multipart form data
+#         files = {
+#             "file": (file.name, file, "application/pdf")
+#         }
+
+#         # Prepare the form data
+#         data = {
+#             "access_token": access_token,
+#             "email": email
+#         }
+
+#         # Make the POST request
+#         response = requests.post(endpoint, data=data, files=files)
+
+#         # Initialize variables to return
+#         status_code = response.status_code
+#         invoice_data = []
+#         status = ""
+
+#         # Check for HTTP request success
+#         if status_code == 200:
+#             # Parse the response JSON
+#             response_json = response.json()
+
+#             # Extract specific details
+#             invoice_list = response_json.get("invoice_list", [])
+#             if invoice_list:
+#                 # Extract the first invoice's details
+#                 first_invoice = invoice_list[0]
+#                 status = first_invoice.get("status", "Unknown")
+#                 invoice_data = first_invoice.get("invoice_data", [])
+#         else:
+#             # In case of failure, add an error status
+#             status = f"API call failed with status code {status_code}: {response.text}"
+
+#         # st.write(status_code)
+#         # st.write(invoice_data)
+#         # st.write(status)
+#         return status_code, invoice_data, status
+
+#     except FileNotFoundError:
+#         return None, None, "Error: The file was not found."
+#     except Exception as e:
+#         return None, None, f"An error occurred: {str(e)}"
+
+
+
+
+# def file_to_response_json_affine(file):
+
+#     # API Configuration
+#     api_url = "https://pluto.origamis.ai:9001/zolvit/docagent_zolvit"
+#     payload = {
+#         "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InYtYXZpbmFzaC5rQG9yaWdhbWlzLmFpIiwicm9sZSI6IkFkbWluIiw",
+#         "email": "user@zolvit.com",
+#     }
+
+#     try:
+#         files = {"file": ("invoice.pdf", file)}
+#         response = requests.post(api_url, data=payload, files=files)
+
+#         if response.status_code == 200:
+#             response_json = response.json()
+
+#             return response_json, status_code
+            
+#         else:
+#             return None, None
+#     except Exception as e:
+#         return None, None
+    
+
+def response_json_to_dataframes(response_json, api):
+
+    # if api == 'SantaFe':
+    #     try:
+    #         # Extracting DataFrames
+    #         invoice_details = response_json.get("Invoice_Details", {})
+    #         invoice_df = pd.DataFrame([invoice_details])
+
+    #         line_items = response_json.get("Line_Items", [])
+    #         line_items_df = pd.DataFrame(line_items)
+
+    #         total_summary = response_json.get("Total_Summary", {})
+    #         total_summary_df = pd.DataFrame([total_summary])
+
+    #         return invoice_df, line_items_df, total_summary_df
+    #     except:
+    #         return None, None, None
+    
+    # else:
+    try:
         # Extracting DataFrames
-        invoice_details = response_json.get("Invoice_Details", {})
+        invoice_details = response_json.get("Invoice Details", {})
         invoice_df = pd.DataFrame([invoice_details])
 
-        line_items = response_json.get("Line_Items", [])
+        line_items = response_json.get("Line Items", [])
         line_items_df = pd.DataFrame(line_items)
 
-        total_summary = response_json.get("Total_Summary", {})
+        total_summary = response_json.get("Total Summary", {})
         total_summary_df = pd.DataFrame([total_summary])
 
         return invoice_df, line_items_df, total_summary_df
     except:
         return None, None, None
+
+
+def fill_line_items_from_summary(line_items_df, total_summary_df):
+
+    if not pd.isna(line_items_df['taxable_value']).any():
+        try:
+            line_items_df['taxable_value'] = pd.to_numeric(line_items_df['taxable_value'])
+            total_summary_df['total_taxable_value'] = pd.to_numeric(total_summary_df['total_taxable_value'])
+        except:
+            return line_items_df
+        
+
+    if pd.isna(line_items_df['sgst_amount']).all() and pd.isna(line_items_df['cgst_amount']).all() and pd.isna(line_items_df['igst_amount']).all() and pd.isna(line_items_df['sgst_rate']).all() and pd.isna(line_items_df['cgst_rate']).all() and pd.isna(line_items_df['igst_rate']).all():
+        
+        # SGST
+        if not pd.isna(total_summary_df['total_sgst_amount']).any():
+
+            try:
+                total_summary_df['total_sgst_amount'] = pd.to_numeric(total_summary_df['total_sgst_amount'])
+            except:
+                return line_items_df
+
+            for index, row in line_items_df.iterrows():
+                ratio = row['taxable_value'] / total_summary_df['total_taxable_value'].sum()
+                line_items_df.at[index, 'sgst_amount'] = total_summary_df['total_sgst_amount'].sum() * ratio
+
+        # CGST
+        if not pd.isna(total_summary_df['total_cgst_amount']).any():
+
+            try:
+                total_summary_df['total_cgst_amount'] = pd.to_numeric(total_summary_df['total_cgst_amount'])
+            except:
+                return line_items_df
+
+            for index, row in line_items_df.iterrows():
+                ratio = row['taxable_value'] / total_summary_df['total_taxable_value'].sum()
+                line_items_df.at[index, 'cgst_amount'] = total_summary_df['total_cgst_amount'].sum() * ratio
+
+        # IGST  
+        if not pd.isna(total_summary_df['total_igst_amount']).any():
+
+            try:
+                total_summary_df['total_igst_amount'] = pd.to_numeric(total_summary_df['total_igst_amount'])
+            except:
+                return line_items_df
+
+            for index, row in line_items_df.iterrows():
+                ratio = row['taxable_value'] / total_summary_df['total_taxable_value'].sum()
+                line_items_df.at[index, 'igst_amount'] = total_summary_df['total_igst_amount'].sum() * ratio
+
+        # Total tax amount
+        if not pd.isna(total_summary_df['total_tax_amount']).any():
+
+            try:
+                total_summary_df['total_tax_amount'] = pd.to_numeric(total_summary_df['total_tax_amount'])
+            except:
+                return line_items_df
+
+            for index, row in line_items_df.iterrows():
+                ratio = row['taxable_value'] / total_summary_df['total_taxable_value'].sum()
+                line_items_df.at[index, 'tax_amount'] = total_summary_df['total_tax_amount'].sum() * ratio
+
+    return line_items_df
 
 
 def missing_value_check(invoice_df, line_items_df, total_summary_df):
@@ -90,54 +344,38 @@ def missing_value_check(invoice_df, line_items_df, total_summary_df):
     if invalid_supply.any():
         return False, 'Not in options.', 'place_of_supply'
     
+    taxable_value_group_condition = (
+        (pd.isna(line_items_df['quantity']).any() or pd.isna(line_items_df['rate_per_item_after_discount']).any()) and
+        pd.isna(line_items_df['taxable_value']).any()
+    )
 
-    taxable_condition1 = (pd.isna(line_items_df['rate_per_item_after_discount']) | pd.isna(line_items_df['quantity'])).any()
-    taxable_condition2 = (pd.isna(line_items_df['final_amount']) | pd.isna(line_items_df['tax_amount'])).any()
-    taxable_condition3 = (pd.isna(line_items_df['final_amount']) | pd.isna(line_items_df['tax_rate'])).any()
-    taxable_condition4 = (pd.isna(line_items_df['tax_amount']) | pd.isna(line_items_df['tax_rate'])).any()
-    taxable_condition5 = (pd.isna(line_items_df['tax_amount']) | (pd.isna(line_items_df['sgst_rate']) & pd.isna(line_items_df['cgst_rate']) & pd.isna(line_items_df['igst_rate']))).any()
-    taxable_condition6 = (pd.isna(line_items_df['tax_rate']) | (pd.isna(line_items_df['sgst_amount']) & pd.isna(line_items_df['cgst_amount']) & pd.isna(line_items_df['igst_amount']))).any()
-    taxable_condition7 = ((pd.isna(line_items_df['sgst_rate']) & pd.isna(line_items_df['cgst_rate']) & pd.isna(['igst_rate'])) | (pd.isna(line_items_df['sgst_amount']) & pd.isna(line_items_df['cgst_amount']) & pd.isna(['igst_amount']))).any()
-    taxable_condition8 = (pd.isna(line_items_df['final_amount']) | (pd.isna(line_items_df['sgst_rate']) & pd.isna(line_items_df['cgst_rate']) & pd.isna(['igst_rate']))).any()
-    taxable_condition9 = (pd.isna(line_items_df['final_amount']) | (pd.isna(line_items_df['sgst_amount']) & pd.isna(line_items_df['cgst_amount']) & pd.isna(['igst_amount']))).any()
+    tax_group_condition = (
+        pd.isna(line_items_df['tax_rate']).any() and
+        pd.isna(line_items_df['tax_amount']).any() and 
+        pd.isna(line_items_df['igst_rate']).any() and
+        pd.isna(line_items_df['igst_amount']).any() and
+        (pd.isna(line_items_df['sgst_rate']).any() or pd.isna(line_items_df['cgst_rate']).any()) and
+        (pd.isna(line_items_df['sgst_amount']).any() or pd.isna(line_items_df['cgst_amount']).any())
+    )
 
+    final_amount_group_condition = (
+        pd.isna(line_items_df['final_amount']).any()
+    )
 
-    if (taxable_condition1 and taxable_condition2 and taxable_condition3 and taxable_condition4 and taxable_condition5 and taxable_condition6
-            and taxable_condition7 and taxable_condition8 and taxable_condition9):
-        return False, 'Missing Values', 'Not Enough fields in line items. First'
-    
+    missing_groups = 0
 
-    tax_condition1 = (pd.isna(line_items_df['final_amount']) | pd.isna(line_items_df['taxable_value'])).any()
-    tax_condition2 = (pd.isna(line_items_df['final_amount']) | pd.isna(line_items_df['tax_rate'])).any()
-    tax_condition3 = (pd.isna(line_items_df['taxable_value']) | pd.isna(line_items_df['tax_rate'])).any()
-    tax_condition4 = (pd.isna(line_items_df['final_amount']) | (pd.isna(line_items_df['sgst_rate']) & pd.isna(line_items_df['cgst_rate']) & pd.isna(line_items_df['igst_rate']))).any()
-    tax_condition5 = (pd.isna(line_items_df['taxable_value']) | (pd.isna(line_items_df['sgst_rate']) & pd.isna(line_items_df['cgst_rate']) & pd.isna(line_items_df['igst_rate']))).any()
-    tax_condition6 = (pd.isna(line_items_df['final_amount']) | (pd.isna(line_items_df['rate_per_item_after_discount']) & pd.isna(line_items_df['quantity']))).any()
+    if taxable_value_group_condition:
+        missing_groups += 1
 
-    if (tax_condition1 and tax_condition2 and tax_condition3 and tax_condition4 and tax_condition5 and tax_condition6):
-        return False, 'Need to be checked by agent.', 'Not Enough fields in line items. Second'
+    if tax_group_condition:
+        missing_groups += 1
 
-    
-    final_condition1 = (pd.isna(line_items_df['taxable_value']) | pd.isna(line_items_df['tax_rate'])).any()
-    final_condition2 = (pd.isna(line_items_df['taxable_value']) | pd.isna(line_items_df['tax_amount'])).any()
-    final_condition3 = (pd.isna(line_items_df['taxable_value']) | (pd.isna(line_items_df['sgst_rate']) & pd.isna(line_items_df['cgst_rate']) & pd.isna(line_items_df['igst_rate']))).any()
-    final_condition4 = (pd.isna(line_items_df['taxable_value']) | (pd.isna(line_items_df['sgst_amount']) & pd.isna(line_items_df['cgst_amount']) & pd.isna(line_items_df['igst_amount']))).any()
-    final_condition5 = (pd.isna(line_items_df['tax_amount']) | pd.isna(line_items_df['tax_rate'])).any()
-    final_condition6 = (pd.isna(line_items_df['tax_amount']) | (pd.isna(line_items_df['sgst_rate']) & pd.isna(line_items_df['cgst_rate']) & pd.isna(line_items_df['igst_rate']))).any()
-    final_condition7 = (pd.isna(line_items_df['tax_rate']) | (pd.isna(line_items_df['sgst_amount']) & pd.isna(line_items_df['cgst_amount']) & pd.isna(line_items_df['igst_amount']))).any()
-    final_condition8 = ((pd.isna(line_items_df['sgst_rate']) & pd.isna(line_items_df['cgst_rate']) & pd.isna(['igst_rate'])) | (pd.isna(line_items_df['sgst_amount']) & pd.isna(line_items_df['cgst_amount']) & pd.isna(['igst_amount']))).any()
+    if final_amount_group_condition:
+        missing_groups += 1
 
-    if (final_condition1 and final_condition2 and final_condition3 and final_condition4 and final_condition5 and final_condition6 and final_condition7
-            and final_condition8):
-        return False, 'Missing Values', 'Not Enough fields in line items. Third'
+    if missing_groups > 1:
+        return False, 'Missing Values', 'Line items'
 
-
-    # invoice_condition1 = (pd.isna(invoice_df['taxable_value']) | pd.isna(invoice_df['invoice_value'])).any()
-    # invoice_condition2 = (pd.isna(invoice_df['tax_amount']) | pd.isna(invoice_df['invoice_value'])).any()
-    # invoice_condition3 = (pd.isna(invoice_df['tax_amount']) | pd.isna(invoice_df['taxable_value'])).any()
-
-    # if (invoice_condition1 or invoice_condition2 or invoice_condition3):
-    #     return False, 'Missing Values', 'Not Enough fields in invoice details.'
     
 
     total_condition1 = (pd.isna(total_summary_df['total_taxable_value']) | pd.isna(total_summary_df['total_invoice_value'])).any()
@@ -149,7 +387,33 @@ def missing_value_check(invoice_df, line_items_df, total_summary_df):
     if (total_condition1 and total_condition2 and total_condition3 and total_condition4 and total_condition5):
         return False, 'Missing Values', 'Not Enough fields in summary details.'   
 
-    return True, 'No Missing Values', 'Proceed with next check.'         
+    # Allowed tax rates
+    tax_rates = ['0', '2.5', '5', '6', '9', '12', '18', '24']
+    tax_rates_float = [float(rate) for rate in tax_rates]  # Normalize tax rates to float
+
+    # Columns to validate
+    columns_to_check = ['igst_rate', 'sgst_rate', 'cgst_rate', 'tax_rate']
+
+    for index, row in line_items_df.iterrows():
+        for column in columns_to_check:
+            value = row[column]
+            
+            # Skip validation for null, NaN, or None values
+            if pd.isna(value) or value is None:
+                continue
+            
+            try:
+                # Convert the column value to float
+                tax_rate_float = float(value)
+            except ValueError:
+                return False, column, f'Invalid {column} format: {value}'
+            
+            # Check if the tax rate is in the allowed list
+            if tax_rate_float not in tax_rates_float:
+                return False, column, f'{column} in line items: {value} is not valid.'
+
+
+    return True, 'No Missing Values', 'Proceed with next check.'
 
 
 def data_type_check(invoice_df, line_items_df, total_summary_df):
@@ -206,6 +470,15 @@ def data_type_check(invoice_df, line_items_df, total_summary_df):
         return False, "Data type mismatch", f"Error during validation: {str(e)}"
 
 
+def fill_taxable_from_qty_rate(df):
+    for index, row in df.iterrows():
+        # Use pd.isnull() to check for missing values
+        if pd.isnull(row['taxable_value']) and not pd.isnull(row['quantity']) and not pd.isnull(row['rate_per_item_after_discount']):
+            df.at[index, 'taxable_value'] = row['quantity'] * row['rate_per_item_after_discount']
+
+    return df
+
+
 def relation_check(invoice_df, line_items_df, total_summary_df):
 
     # Replace 0 values with NaN in the specified columns of invoice_df
@@ -229,13 +502,6 @@ def relation_check(invoice_df, line_items_df, total_summary_df):
     for id, row in invoice_df.iterrows():
         # Check if all values are numeric (not NaN)
         if pd.notna(row['invoice_value']) and pd.notna(row['taxable_value']) and pd.notna(row['tax_amount']):
-            # # Ensure all are numeric before comparison
-            # if not (isinstance(row['invoice_value'], (int, float)) and 
-            #         isinstance(row['taxable_value'], (int, float)) and 
-            #         isinstance(row['tax_amount'], (int, float))):
-            #     return False, "Relation check", "Non-numeric values present"
-            
-            # Perform close check
             if not np.isclose(row['invoice_value'], row['taxable_value'] + row['tax_amount'], atol=1, rtol=0):
                 return False, "Relation check", "Failed relation check in invoice details."
             
@@ -256,7 +522,7 @@ def relation_check(invoice_df, line_items_df, total_summary_df):
             if not np.isclose(row['total_invoice_value'], row['total_taxable_value'] + (row['total_sgst_amount']+row['total_cgst_amount']), atol=1, rtol=0):
                 return False, "Relation check", "Failed relation check in Summary. Third"
             
-    if not total_summary_df[['total_taxable_value', 'total_invoice_value']].isnull().any().any() and total_summary_df[['total_sgst_amount', 'total_cgst_amount', 'total_igst_amount', 'total_tax_amount']].isnull().any().any():
+    if not total_summary_df[['total_taxable_value', 'total_invoice_value']].isnull().any().any() and total_summary_df[['total_sgst_amount', 'total_cgst_amount', 'total_igst_amount', 'total_tax_amount']].isnull().all().all():
         for id, row in total_summary_df.iterrows():
             if not np.isclose(row['total_invoice_value'], row['total_taxable_value'], atol=1, rtol=0):
                 return False, "Relation check", "Failed relation check in Summary. Third"
@@ -598,38 +864,60 @@ def relation_check(invoice_df, line_items_df, total_summary_df):
             
 
 def accuracy_check(invoice_df, line_items_df, total_summary_df):
+    passed_after_filling_values = False
 
     check, stage, remark = missing_value_check(invoice_df, line_items_df, total_summary_df)
     if check == False:
-        return check, stage, remark
+
+        line_items_df = fill_line_items_from_summary(line_items_df, total_summary_df)
+
+
+        check, stage, remark = missing_value_check(invoice_df, line_items_df, total_summary_df)
+
+        if check == False:
+            return check, stage, remark, line_items_df
+        else:
+            passed_after_filling_values = True
     
     check, stage, remark = data_type_check(invoice_df, line_items_df, total_summary_df)
     if check == False:
-        return check, stage, remark
+        return check, stage, remark, line_items_df
+
+    line_items_df = fill_taxable_from_qty_rate(line_items_df)
     
     check, stage, remark = relation_check(invoice_df, line_items_df, total_summary_df)
     if check == False:
-        return check, stage, remark
+        return check, stage, remark, line_items_df
     
-    return True, 'All stages', 'Passed'
+    if passed_after_filling_values == False:
+        return True, 'All stages', 'Passed', line_items_df
+    else:
+        return True, 'After filling values', 'Passed', line_items_df
 
 
-def log_data_in_response_df(response_df, file_name, response_json, check, step, remark):
-    new_row = {'file_name':file_name, 'response_json':response_json, 'check_passed':check, 'step':step, 'remark':remark}
+def log_data_in_response_df(response_df, file_name, response_json, check, step, remark, status_code):
+    new_row = {'file_name':file_name, 'response_json':response_json, 'check_passed':check, 'step':step, 'remark':remark, 'status_code':status_code}
     response_df = pd.concat([response_df, pd.DataFrame([new_row])], ignore_index=True)
 
     return response_df
 
 
-def log_data_in_response_df_for_no_response(response_df, file_name):
-    new_row = {'file_name':file_name, 'response_json':None, 'check_passed':None, 'step':None, 'remark':None}
+def log_data_in_response_df_for_no_response(response_df, file_name, status_code):
+    new_row = {'file_name':file_name, 'response_json':None, 'check_passed':None, 'step':None, 'remark':None, 'status_code':status_code}
     response_df = pd.concat([response_df, pd.DataFrame([new_row])], ignore_index=True)
 
     return response_df
 
 
-def log_data_in_response_df_for_no_dataframes(response_df, file_name, response_json):
-    new_row = {'file_name':file_name, 'response_json':response_json, 'check_passed':None, 'step':None, 'remark':'Unknown JSON structure'}
+def log_data_in_response_df_for_no_dataframes(response_df, file_name, response_json, status_code):
+    new_row = {'file_name':file_name, 'response_json':response_json, 'check_passed':None, 'step':None, 'remark':'Unknown JSON structure', 'status_code':status_code}
+    response_df = pd.concat([response_df, pd.DataFrame([new_row])], ignore_index=True)
+
+    return response_df
+
+
+def log_data_in_response_df_for_invalid_file(response_df, file_name, status_code, error_code, message):
+    new_row = {'file_name': file_name, 'status_code':status_code, 'check_passed': None, 'step': error_code, 'remark': message}
     response_df = pd.concat([response_df, pd.DataFrame([new_row])], ignore_index=True)
 
     return response_df
@@ -821,26 +1109,42 @@ def get_listed_files(file_name_list, files_container):
     return filtered_files
 
 
-def create_zip(file_container, file_name_dict, final_df, response_df):
-# Create a BytesIO object to store the zip file in memory
+def create_zip(file_container, file_name_dict, final_df, response_df, non_blank_error_code_lists):
+    # Create a BytesIO object to store the zip file in memory
     zip_buffer = BytesIO()
 
     # Open a ZipFile in write mode
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-        # Add files from file_name_dict to the zip file
-        for folder, file_names in file_name_dict.items():  # Iterate through folders and file names
-            # Ensure folder path in the zip file
-            zip_file.writestr(f"{folder}/", "")
+        # Add main folder files only
+        for folder in ["all_files", "processed_files", "failed_files", "passed_files"]:
+            if folder in file_name_dict:
+                # Ensure folder path in the zip file
+                zip_file.writestr(f"{folder}/", "")
 
-            # Process each file name in the folder
-            for file_name in file_names:
-                if file_name in file_container:
-                    file_data = file_container[file_name]
-                    zip_file.writestr(f"{folder}/{file_name}", file_data)
-                else:
-                    print(f"Warning: {file_name} not found in file_container.")
+                # Process each file name in the folder
+                for file_name in file_name_dict[folder]:
+                    if file_name in file_container:
+                        file_data = file_container[file_name]
+                        zip_file.writestr(f"{folder}/{file_name}", file_data)
+                    else:
+                        print(f"Warning: {file_name} not found in file_container.")
 
-        # Add invoice_df as output.csv
+        # Create folders from non_blank_error_code_lists inside 'invalid_files'
+        if "invalid_files" in file_name_dict:
+            for error_code, file_names in non_blank_error_code_lists.items():
+                # Ensure error code folder path under invalid_files
+                error_folder_path = f"invalid_files/{error_code}/"
+                zip_file.writestr(error_folder_path, "")
+
+                # Process each file name in the error code folder
+                for file_name in file_names:
+                    if file_name in file_container:
+                        file_data = file_container[file_name]
+                        zip_file.writestr(f"{error_folder_path}{file_name}", file_data)
+                    else:
+                        print(f"Warning: {file_name} not found in file_container.")
+
+        # Add final_df as output.csv
         if final_df is not None:
             csv_data = final_df.to_csv(index=False)
             zip_file.writestr("output.csv", csv_data)
@@ -857,6 +1161,51 @@ def create_zip(file_container, file_name_dict, final_df, response_df):
 
 
 
+def get_month_year():
+    """
+    Creates a Streamlit dropdown UI to select a month and year.
+    Defaults to last month and its corresponding year.
+    Returns selected month (numeric) and year (as strings).
+    """
+    # Get today's date and calculate last month's date
+    today = datetime.today()
+    first_day_of_this_month = today.replace(day=1)
+    last_month_date = first_day_of_this_month - timedelta(days=1)
+
+    # Get last month's name and year
+    default_month = last_month_date.strftime("%B")  # Full month name
+    default_year = last_month_date.strftime("%Y")   # Year as a string
+
+    # Month and year options for dropdown
+    months = [
+        "January", "February", "March", "April", "May", 
+        "June", "July", "August", "September", "October", 
+        "November", "December"
+    ]
+    years = [str(year) for year in range(2024, today.year + 1)]
+
+    # Streamlit UI for user inputs
+    selected_month = st.selectbox("Select Month", months, index=months.index(default_month))
+    selected_year = st.selectbox("Select Year", years, index=years.index(default_year))
+
+    # Convert selected month to numeric format
+    month_as_number = str(months.index(selected_month) + 1).zfill(2)  # Zero-padded
+
+    # Return month and year as strings
+    return month_as_number, selected_year
+
+
+def generate_key(length=50):
+    if length < 1:
+        raise ValueError("Key length must be at least 1 character.")
+
+    # Define the character pool: uppercase, lowercase, digits, and special characters
+    characters = string.ascii_letters + string.digits + string.punctuation
+
+    # Randomly select characters from the pool
+    key = ''.join(random.choices(characters, k=length))
+
+    return key
 
 
 
