@@ -232,8 +232,6 @@ def main():
                     # Update progress bar
                     progress_bar.progress((index + 1) / total_files)
 
-                    print(log_response)
-
 
                 except:
                     processed_files.append(file_name)
@@ -248,8 +246,6 @@ def main():
 
                     # Update progress bar
                     progress_bar.progress((index + 1) / total_files)
-
-                    print(log_response)
 
 
             file_name_dict = {
