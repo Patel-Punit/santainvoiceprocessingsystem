@@ -10,8 +10,6 @@ import random
 import string
 from datetime import datetime, timedelta
 import json
-from elasticsearch import Elasticsearch  # type: ignore
-
 
 # def file_to_response_json_santa_fe(file):
 #     # API Configuration
