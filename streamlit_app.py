@@ -27,6 +27,8 @@ def main():
     # SantaFe or Affine
     api = 'SantaFe'
 
+    uploaded_files = st.file_uploader("Choose PDF files", accept_multiple_files=True, type="pdf")
+
     # Add a Start Process button
     start_process = st.button("Start Process")
 
